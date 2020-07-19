@@ -1,0 +1,490 @@
+---
+title: "MM vs CH: Orange Juice Sales Analyses"
+author: "Nappinnai Jayaseelan"
+output:
+  pdf_document: default
+---
+\newpage
+
+**Problem:**
+
+The grocery store chain sells two brands of orange juice Citrus Hill (CH) and Minute Maid (MM). MM gets higher margins than CH. Brand Manager is interested in finding out what variables influence a person's probability of buying MM, for increasing the MM sales. Sales Manager is interested in having a predictive model where he can predict the probability of customer purchasing MM.
+
+**Problem in Detail:**
+
+**Brand Manager needs the answers for the following questions basically:**
+
+1. What predictor variables influence the purchase of MM?
+
+2. Are all the variables in the dataset effective or are some more effective than
+others?
+
+3. How confident are you in your recommendations?
+
+4. Based on your analysis what are specific recommendations you have for the brand manager? 
+
+**Sales manager needs the answers for the following questions basically:**
+
+1. Can you provide him a predictive model that can tell him the probability of customers buying MM?
+
+2. How good is the model in its predictions?
+
+3. How confident are you in your recommendations?
+
+**Objective:**
+The overall goal is to improve the sales of MM over CH, since MM has higher margin. 
+
+**Method:**
+This is basically a classic classification problem. For finding which predictors influence the increase in sales of MM orange juice, logistic regression will be the right choice. We can use both logistic regression model and svm model to classify the purchases and find out which model gives the highest level of accuracy. Lets see which model yields the better results.
+
+# Initialization
+
+Load the relevant libraries
+
+```{r}
+library(knitr)
+library(tidyverse)
+library(ggplot2)
+library(plotROC)
+library(caret)
+library("kernlab")
+library(skimr)
+rm(list = ls())
+```
+
+# Data Load
+
+Load the data from the specified url
+
+```{r}
+df <- read.csv(url("http://data.mishra.us/files/OJ.csv"))
+dim(df)
+```
+
+# EDA
+
+Lets begin our analyses with EDA.
+
+## Summarize the data and observe for NAs
+As a first step, we are looking at the structure of the variables and data in various ways. We are also looking at the missing values.
+
+```{r}
+summary(df)
+str(df)
+glimpse(df)
+head(df)
+#skim(df)
+```
+
+### Missing Values
+skim() command shows that there are no missing values. Hence the process of imputation is not needed.
+
+Note: While creating the pdf, it is not allowing me to create pdf with skim command's output. Hence, commented out that line of code.
+
+### Null Values
+There are no null values in the data.
+
+## Observing Data
+Some basic observation of data.
+```{r}
+glimpse(df)
+#Purchase - A factor with levels CH and MM indicating whether the customer purchased Citrus Hill or Minute Maid Orange Juice
+#WeekofPurchase - Week of purchase. Here week 227 is week 1 of a year (i.e., January first week)
+
+#StoreID - Store ID
+
+#PriceCH - Price charged for CH. Also called List Price for CH
+#PriceMM - Price charged for MM. Also called List Price for MM
+#DiscCH - Discount offered for CH
+#DiscCH - Discount offered for MM
+
+#SpecialCH - Indicator of special on CH. Special can be a free gift, loyalty points etc.
+#SpecialMM - Indicator of special on MM. Special can be a free gift, loyalty points etc.
+#LoyalCH - Customer brand loyalty for CH. That is, probability to buy CH (over MM) based on prior purchase behavior.
+
+#SalePriceMM - Sale price for MM. This is the difference between the list price and discount.
+#SalePriceCH - Sale price for CH. This is the difference between the list price and discount. 
+##PriceCH - DiscCH = SalePriceCH
+##PriceMM - DiscMM = SalePriceMM
+
+#PriceDiff - Sale price of MM less sale price of CH
+##PriceDiff = SalePriceMM - SalePriceCH
+
+#Store7 - A factor with levels No and Yes indicating whether the sale is at Store 7
+##StoreID has this information already
+
+#PctDiscMM - Percentage discount for MM
+##DiscMM/PriceMM = PctDiscMM
+
+#PctDiscCH - Percentage discount for CH
+##DiscCH/PriceCH = PctDiscCH
+
+#ListPriceDiff - List price of MM less list price of CH
+##PriceMM - PriceCH = ListPriceDiff
+
+#STORE - Which of 5 possible stores the sale occurred at
+```
+
+## Checking for zero variance
+```{r}
+nearZeroVar(df, names = T)
+```
+
+There is no near zero variance in any of the features.
+
+## Checking for factorization
+
+```{r}
+#StoreID
+table(df$StoreID)
+#  1   2   3   4   7 
+#157 222 196 139 356 
+#There are 5 store ids; can convert it into factors
+df$StoreID <- as.factor(df$StoreID)
+
+#STORE
+table(df$STORE)
+#  0   1   2   3   4 
+#356 157 222 196 139 
+df$STORE <- as.factor(df$STORE)
+
+#SpecialCH, SpecialMM are indicators - can convert into factors
+table(df$SpecialCH)
+#  0   1 
+#912 158
+df$SpecialCH <- as.factor(df$SpecialCH)
+
+table(df$SpecialMM)
+#  0   1 
+#897 173
+df$SpecialMM <- as.factor(df$SpecialMM)
+
+#Store7
+table(df$Store7)
+# No Yes 
+#714 356
+
+colnames(df)
+```
+
+The categorical values are converted into factors.
+
+## Different Correlation Plots
+```{r}
+#Finding out the correlation among the numeric features
+cor(df[,unlist(lapply(df, is.numeric))])
+
+str(lapply(df, is.numeric))
+str(unlist(lapply(df, is.numeric)))
+
+library(corrplot)
+matx <- cor(df[,unlist(lapply(df, is.numeric))])
+corrplot(matx, type="upper", order="hclust")
+
+library(psych)
+pairs.panels(df[,unlist(lapply(df, is.numeric))])
+
+library(PerformanceAnalytics)
+chart.Correlation(df[,unlist(lapply(df, is.numeric))])
+```
+
+### Eliminating features based on correlation plot
+
+The following are the list of set of features that have greater than or equal to |0.7| correlation:
+
+WeekofPurchase    PriceCH        0.70
+
+DiscCH            SalePriceCH   -0.71
+
+DiscCH            PctDiscCH      1.00
+
+DiscMM            SalePriceMM   -0.85
+
+DiscMM            PriceDiff     -0.82
+
+DiscMM            PctDiscMM      1.00
+
+SalePriceMM       PriceDiff      0.85
+
+SalePriceMM       PctDiscMM     -0.86
+
+SalePriceCH       PctDiscCH     -0.72
+
+PriceDiff         PctDiscMM     -0.83
+
+**Summarizing the correlated features:**
+
+PriceCH : WeekofPurchase
+
+PctDiscMM : PriceDiff, SalePriceMM, DiscMM
+
+PctDiscCH : SalePriceCH, DiscCH
+
+Hence, we can eliminate the features WeekofPurchase, PriceDiff, SalePriceMM, DiscMM, SalePriceCH, DiscCH.
+
+## Redundant Features
+```{r}
+library("dataPreparation")
+# IDENTIFY AND LIST VARIABLES THAT ARE CONSTANTS
+constant_cols <- whichAreConstant(df)
+
+# IDENTIFY AND LIST VARIABLES THAT ARE DOUBLES
+double_cols <- whichAreInDouble(df)
+
+# IDENTIFY AND LIST VARIABLES THAT ARE EXACT BIJECTIONS
+bijections_cols <- whichAreBijection(df)
+```
+
+It shows that STORE and StoreID are same. One of them has to be removed. And Store7 information is there as part of StoreID. Hence, STORE and Store7 can be removed.
+
+### Remaining list of Predictors:
+
+StoreID
+
+PriceCH
+
+PriceMM
+
+SpecialCH
+
+SpecialMM
+
+LoyalCH
+
+PctDiscMM
+
+PctDiscCH
+
+ListPriceDiff
+
+## Converting the values of CH and MM into 0 and 1 for final prediction
+```{r}
+str(df$Purchase)
+table(df$Purchase)
+
+df$Purchase <- ifelse(df$Purchase=="MM",1,0)
+table(df$Purchase)
+str(df$Purchase)
+
+df$Purchase <- as.factor(df$Purchase)
+str(df$Purchase)
+table(df$Purchase)
+```
+
+# Handling Overfitting
+
+## Splitting into train and test data
+```{r}
+split = 0.7
+set.seed(100)
+
+train_index <- sample(1:nrow(df), split * nrow(df))
+test_index <- setdiff(1:nrow(df), train_index)
+
+X_train <- df[train_index,]
+X_test <- df[test_index,]
+```
+
+## For Cross Validation
+```{r}
+control <- trainControl(method = "repeatedcv",
+                        number = 10,
+                        repeats = 4)
+```
+
+Caret package works good for handling all these different models. It takes care of cross validation for handling over-filling and scaling by pre-processing the data with 'center' and 'scale'.
+
+# Various Models
+## Logistic using caret package
+```{r message=FALSE, warning=FALSE}
+logistic_model <- train(Purchase ~ StoreID +
+                          PriceCH +
+                          PriceMM +
+                          SpecialCH +
+                          SpecialMM +
+                          LoyalCH +
+                          PctDiscMM +
+                          PctDiscCH +
+                          ListPriceDiff,
+                        data = X_train,
+                        method = "glm",
+                        preProcess = c("center", "scale"),
+                        family = binomial(link = 'logit'),
+                        trControl = control)
+
+summary(logistic_model)
+
+logistic_model
+
+#Prediction using logistic regression
+#Binary outcome
+X_test$logistic_prediction <- predict(logistic_model, newdata = X_test)
+confusionMatrix(data = X_test$logistic_prediction, X_test$Purchase)
+```
+
+The warning 'prediction from a rank-deficient fit may be misleading' is displayed in the above model. To ignore the warning message, 'message=FALSE, warning=FALSE' is added to the r chunk. On researching further, it appears that the warning message is due to the fact that estimate for ListPriceDiff is NA. On analysing this further more, we see that PriceMM - PriceCH = ListPriceDiff. ListPriceDiff is redundant information and it does not add any value to the model. Hence this feature can be eliminated.
+
+**Final List of Predictors:**
+To summarize, the features WeekofPurchase, PriceDiff, SalePriceMM, DiscMM, SalePriceCH, DiscCH are eliminated due to multi-collinearity in the data. The features STORE and StoreID represent one and the same. Store7 information is part of StoreID. Hence the features STORE and Store7 can be eliminated. On analyzing furthermore, we see that ListPriceDiff does not add any value to the model. Hence, that can be eliminated too. Now, the final list of predictors are:
+
+StoreID
+
+PriceCH
+
+PriceMM
+
+SpecialCH
+
+SpecialMM
+
+LoyalCH
+
+PctDiscMM
+
+PctDiscCH
+
+## Logistic without ListPriceDiff using caret package
+```{r}
+logistic_model_nolistpricediff <- train(Purchase ~ StoreID +
+                          PriceCH +
+                          PriceMM +
+                          SpecialCH +
+                          SpecialMM +
+                          LoyalCH +
+                          PctDiscMM +
+                          PctDiscCH,
+                        data = X_train,
+                        method = "glm",
+                        preProcess = c("center", "scale"),
+                        family = binomial(link = 'logit'),
+                        trControl = control)
+
+summary(logistic_model_nolistpricediff)
+
+logistic_model_nolistpricediff
+
+#Prediction using logistic regression without ListPriceDiff
+#Binary outcome
+X_test$logistic_nolistpricediff_prediction <- predict(logistic_model_nolistpricediff, newdata = X_test)
+confusionMatrix(data = X_test$logistic_nolistpricediff_prediction , X_test$Purchase)
+```
+
+Logistic Regression yields 83.8% accuracy. We see that both the logistic models give the same accuracy. Removing ListPriceDiff did not make any difference and removing this features is the right thing to do.
+
+We see that PriceMM, LoyalCH and PctDiscMM are strongly significant predictors. The features PriceMM and LoyalCH have negative effect on purchasing the MM orange juice. PctDiscMM has positive effect on purchasing the MM orange juice. It totally makes sense. When the price of MM juice goes high, customers will tend to look for other brands of orange juice. Hence, for motivating the customers to buy MM orange juice, price of MM (PriceMM) should go down. Similarly, when the customers are more loyal to CH orange juice, they are less likely to buy MM orange juice. LoyalCH has negative effect on MM orange juice purchase. On the other hand, more discount on MM orange juice (PctDiscMM), boosts the sales of MM orange juice.
+
+In addition to this, there is a slight negative effect on the purchase of MM orange juice when there is an increase on the features Store7 or PctDiscCH. It totally makes sense that the increase in discount for CH (PctDiscCH), tend the customers to buy CH, resulting in not buying MM orange juice. It looks like the customers who visit Store7 buy more of CH orange juice for whatsover be the reason. May be, they are more loyal customers to CH juice.
+
+```{r}
+PriceMM_coef <- summary(logistic_model_nolistpricediff)$coefficients[7]
+PriceMM_coef
+LoyalCH_coef <- summary(logistic_model_nolistpricediff)$coefficients[10]
+LoyalCH_coef
+PctDiscMM_coef <- summary(logistic_model_nolistpricediff)$coefficients[11]
+PctDiscMM_coef
+
+#Converting into Probabilities
+exp(PriceMM_coef) / (1 + exp(PriceMM_coef))
+exp(LoyalCH_coef) / (1 + exp(LoyalCH_coef))
+exp(PctDiscMM_coef) / (1 + exp(PctDiscMM_coef))
+```
+
+On converting the log odds into probabilities, we see that PctDiscMM has the highest influence on purchasing MM orange juice.
+
+## Logistic Regression for probability detection
+```{r}
+prob_log <- glm(Purchase ~ StoreID +
+                          PriceCH +
+                          PriceMM +
+                          SpecialCH +
+                          SpecialMM +
+                          LoyalCH +
+                          PctDiscMM +
+                          PctDiscCH,
+                        data = X_train,
+                        family = binomial(link = 'logit'))
+
+summary(prob_log)
+
+prob_log
+
+#Probability outcome
+X_test$logistic_prob_prediction <- predict(prob_log, newdata = X_test, type = "response")
+```
+
+## SVM Linear using caret package
+```{r}
+svmLinear_model <- train(Purchase ~ StoreID +
+                          PriceCH +
+                          PriceMM +
+                          SpecialCH +
+                          SpecialMM +
+                          LoyalCH +
+                          PctDiscMM +
+                          PctDiscCH,
+                        data = X_train,
+                        method = "svmLinear",
+                        preProcess = c("center", "scale"),
+                        trControl = control)
+
+summary(svmLinear_model)
+
+svmLinear_model
+
+#Prediction using SVM Linear
+X_test$svmLinear_prediction <- predict(svmLinear_model, newdata = X_test)
+confusionMatrix(data = X_test$svmLinear_prediction, X_test$Purchase)
+```
+
+SVM Linear model yields 84.11% accuracy, which is slightly more than the logistic regression.
+
+## SVM Radial using caret package
+```{r}
+grid_radial <- expand.grid(sigma = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9),
+                           C = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 1, 2))
+svmRadial_model <- train(Purchase ~ StoreID +
+                          PriceCH +
+                          PriceMM +
+                          SpecialCH +
+                          SpecialMM +
+                          LoyalCH +
+                          PctDiscMM +
+                          PctDiscCH,
+                        data = X_train,
+                        method = "svmRadial",
+                        preProcess = c("center", "scale"),
+                        tuneGrid = grid_radial,
+                        trControl = control)
+
+summary(svmRadial_model)
+
+svmRadial_model
+
+#Prediction using SVM Radial
+X_test$svmRadial_prediction <- predict(svmRadial_model, newdata = X_test)
+confusionMatrix(data = X_test$svmRadial_prediction, X_test$Purchase)
+```
+
+SVM Radial model yields 83.8% accuracy, which is same as the accuracy of the logistic regression model, slightly lower than SVM Linear model.
+
+# Results and Conclusion
+**Brand Manager:**
+
+From the above analyses, we can conclude that the predictors PriceMM, LoyalCH and PctDiscMM influence the purchase of MM orange juice, The increase in PriceMM or LoyalCH will decrease the chances of buying MM orange juice. The increase in PctDiscMM will increase the chances of buying MM orange juice. The next important predictors are Store7 and PctDiscCH. For some reasons, the customers who buy at Store7 are more towards buying CH orange juice over MM orange juice. The increase in PctDiscCH decrease the chances of buying MM orange juice.
+
+All the 3 models show more than 80% accuracy and gives good confidence on the models. Out of all the 3 models, SVM Linear has the highest accuracy level of 84.11%, which is slightly more than the logistic model and SVM Radial model which each have the accuracy level of 83.8%. If 'True Positive Rate' needs to be given the highest priority, then both logistic and SVM Radial has slightly higher Sensitivity of 91.24% when compare to SVM Linear with Sensitivity of 90.21%.
+
+So, to summarize, one most important thing the customers are looking for is more discount on MM orange juice for purchasing MM orange juice.
+
+**SalesManager:**
+
+Logistic regression model gives the probability of customers buying MM orange juice. SVM Linear model is the good one with the highest accuracy of 84.11%. With such high accuracy, we can be confident with this model. If we are particular about Sensitivity, we can go with the SVM Radial model or Logistic model.
+
+# References
+
+https://www.kaggle.com
+
+https://stackoverflow.com
+
+https://www.machinelearningplus.com/machine-learning/caret-package/
+
