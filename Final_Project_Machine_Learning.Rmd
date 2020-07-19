@@ -1,5 +1,10 @@
 ---
 title: "MM vs CH: Orange Juice Sales Analyses"
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'index.pdf'))})
 author: "Nappinnai Jayaseelan"
 output:
   pdf_document: default
@@ -42,6 +47,12 @@ This is basically a classic classification problem. For finding which predictors
 Load the relevant libraries
 
 ```{r}
+#knit: (function(input_file, encoding) {
+#  out_dir <- 'docs';
+#  rmarkdown::render(input_file,
+# encoding=encoding,
+# output_file=file.path(dirname(input_file), out_dir, 'index.pdf'))})
+
 library(knitr)
 library(tidyverse)
 library(ggplot2)
